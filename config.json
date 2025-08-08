@@ -1,7 +1,17 @@
 {
     "customer_arrival_rate" : 10,
     "drinks" : [
+        "Iced",
+        "Black",
+
+        "Chai",
+        "Matcha",
+
+        "Americano",
+
         "Latte",
+        "Mocha",
+
         "Espresso",
         "Cappuccino"
     ]

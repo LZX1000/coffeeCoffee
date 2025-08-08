@@ -1,3 +1,5 @@
+mod customer;
+
 use tokio::time::{sleep, Duration};
 use std::sync::{Arc, Mutex};
 use tokio::task;
@@ -53,7 +55,6 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     let cfg_render = cfg.clone();
     let render_handle = task::spawn(async move {
         let mut last_render = String::new();
-
         while *running_render.lock().unwrap() {
             {
                 let drinks_formatted = cfg_render
@@ -64,7 +65,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                     .join("\n");
 
                 let current_render = format!(
-                    "Arrival Rate: {}\nDrinks:\n{}\n\nPress 'esc' to quit.",
+                    "Arrival Rate: {}\nDrinks:\n{}",
                     cfg_render.customer_arrival_rate,
                     drinks_formatted
                 );
@@ -77,7 +78,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                     last_render = current_render;
                 }
             }
-            
+
             sleep(Duration::from_millis(100)).await;
         }
     });
