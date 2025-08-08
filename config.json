@@ -1,18 +1,24 @@
 {
+    "wait_tolerance_max" : 15,
+    "max_line_size" : 10,
     "customer_arrival_rate" : 10,
-    "drinks" : [
-        "Iced",
-        "Black",
-
-        "Chai",
-        "Matcha",
-
-        "Americano",
-
-        "Latte",
-        "Mocha",
-
-        "Espresso",
-        "Cappuccino"
-    ]
+    "drinks" : {
+        "0" : [
+            "Iced",
+            "Black"
+        ],
+        "1" : [
+            "Chai",
+            "Matcha",
+            "Americano"
+        ],
+        "2" : [
+            "Latte",
+            "Mocha"
+        ],
+        "3" : [
+            "Espresso",
+            "Cappuccino"
+        ]
+    }
 }

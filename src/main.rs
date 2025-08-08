@@ -1,11 +1,14 @@
 mod customer;
+mod player;
 
 use tokio::time::{sleep, Duration};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 use serde::Deserialize;
 use std::fs;
 use std::io::{stdout, Write};
+use futures::future::join_all;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode},
@@ -17,13 +20,15 @@ use crossterm::{
 
 #[derive(Debug, Deserialize)]
 struct Config {
-    customer_arrival_rate: u64,
-    drinks: Vec<String>,
+    customer_arrival_rate: usize,
+    max_line_size: usize,
+    wait_tolerance_max: usize,
+    drinks: HashMap<String, Vec<String>>,
 }
 
 
 fn load_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
-    let data = fs::read_to_string(path)?; // read file as string
+    let data: String = fs::read_to_string(path)?; // read file as string
     let config: Config = serde_json::from_str(&data)?; // parse JSON
     Ok(config)
 }
@@ -48,26 +53,59 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     };
     let running = Arc::new(Mutex::new(true));
     let stdout = Arc::new(Mutex::new(stdout()));
+    let customers = Arc::new(Mutex::new(Vec::<customer::Customer>::new()));
+    let mut player = Arc::new(player::Player::new());
+    let mut handles = Vec::new();
 
     // Rendering
     let running_render = Arc::clone(&running);
     let stdout_render = Arc::clone(&stdout);
     let cfg_render = cfg.clone();
+    let player_render = Arc::clone(&player);
+    let customers_render = Arc::clone(&customers);
+    
     let render_handle = task::spawn(async move {
         let mut last_render = String::new();
-        while *running_render.lock().unwrap() {
+        loop {
+            if !*running_render.lock().unwrap() {
+                break;
+            }
+            
             {
+                let level_key = player_render.level().to_string();
+
                 let drinks_formatted = cfg_render
                     .drinks
-                    .iter()
-                    .map(|drink| format!("  {}", drink))
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                    .get(&level_key)
+                    .map(|drinks| {
+                        drinks
+                            .iter()
+                            .map(|drink| format!("  {}", drink))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_else(|| "  No drinks available.".to_string());
+                
+                let customers_display: String = {
+                    let len = customers_render.lock().unwrap().len();
+
+                    (0..cfg_render.max_line_size)
+                        .map(|i| {
+                            if i < len {
+                                "|"
+                            } else {
+                                "-"
+                            }
+                            .to_string()
+                        })
+                        .collect::<String>()
+                };
 
                 let current_render = format!(
-                    "Arrival Rate: {}\nDrinks:\n{}",
+                    "Arrival Rate: {}\nDrinks:\n{}\n\n{}",
                     cfg_render.customer_arrival_rate,
-                    drinks_formatted
+                    drinks_formatted,
+                    customers_display
                 );
 
                 if current_render != last_render {
@@ -82,16 +120,22 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(100)).await;
         }
     });
+    handles.push(render_handle);
 
     // Controlling
     let running_input = Arc::clone(&running);
+
     let input_handle = task::spawn(async move {
-        while *running_input.lock().unwrap() {
+        loop {
+            if !*running_input.lock().unwrap() {
+                break;
+            }
+
             if event::poll(Duration::from_millis(100)).unwrap() {
                 if let Event::Key(key_event) = event::read().unwrap() {
                     match key_event.code {
                         KeyCode::Esc => {
-                            *running.lock().unwrap() = false;
+                            *running_input.lock().unwrap() = false;
                             break;
                         }
                         _ => {}
@@ -100,14 +144,38 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
             }
         }
     });
+    handles.push(input_handle);
 
-    let (input_res, render_res) = tokio::join!(
-        input_handle,
-        render_handle,
-    );
+    let doing_customer_spawner = Arc::new(Mutex::new(true));
+    let customer_spwaner_doing_customer_spawner = Arc::clone(&doing_customer_spawner);
 
-    input_res.unwrap();
-    render_res.unwrap();
+    let running_customer_spawner = Arc::clone(&running);
+    let cfg_customer_spawner = Arc::clone(&cfg);
+    let customers_customer_spawner = Arc::clone(&customers);
+
+    let customer_spawner_handle = task::spawn(async move {
+        loop {
+            if !*running_customer_spawner.lock().unwrap() {
+                break;
+            }
+            if !*customer_spwaner_doing_customer_spawner.lock().unwrap() {
+                sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+
+            let sleep_duration = cfg_customer_spawner.customer_arrival_rate;
+            sleep(Duration::from_secs(sleep_duration.try_into().unwrap())).await;
+            {
+                (customers_customer_spawner.lock().unwrap()).push(customer::Customer::new())
+            }
+        }
+    });
+    handles.push(customer_spawner_handle);
+
+    join_all(handles).await;
+        // .into_iter()
+        // .map(|res| res.unwrap())
+        // .collect();
 
     // Restore terminal
     execute!(main_stdout, LeaveAlternateScreen, cursor::Show)?;
