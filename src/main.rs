@@ -20,12 +20,23 @@ use crossterm::{
 
 #[derive(Debug, Deserialize)]
 struct Config {
-    customer_arrival_rate: usize,
+    #[serde(default = "default_customer_arrival_wait")]
+    customer_arrival_wait: usize,
+    
+    #[serde(default = "default_max_line_size")]
     max_line_size: usize,
-    wait_tolerance_max: usize,
+
+    #[serde(default = "default_drinks")]
     drinks: HashMap<String, Vec<String>>,
 }
 
+fn default_customer_arrival_wait() -> usize { 10 }
+fn default_max_line_size() -> usize { 10 }
+fn default_drinks() -> HashMap<String, Vec<String>> {
+    let mut map = HashMap::new();
+    map.insert("0".to_string(), vec!["Coffee".to_string()]);
+    map
+}
 
 fn load_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
     let data: String = fs::read_to_string(path)?; // read file as string
@@ -103,7 +114,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
 
                 let current_render = format!(
                     "Arrival Rate: {}\nDrinks:\n{}\n\n{}",
-                    cfg_render.customer_arrival_rate,
+                    cfg_render.customer_arrival_wait,
                     drinks_formatted,
                     customers_display
                 );
@@ -163,19 +174,28 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                 continue;
             }
 
-            let sleep_duration = cfg_customer_spawner.customer_arrival_rate;
+            let sleep_duration = cfg_customer_spawner.customer_arrival_wait;
             sleep(Duration::from_secs(sleep_duration.try_into().unwrap())).await;
             {
-                (customers_customer_spawner.lock().unwrap()).push(customer::Customer::new())
+                let mut customers_customer_spawner_locked = customers_customer_spawner.lock().unwrap();
+                if cfg_customer_spawner.max_line_size > customers_customer_spawner_locked.len() {
+                    (customers_customer_spawner_locked).push(customer::Customer::new())
+                } else {
+                    {
+                        *running_customer_spawner.lock().unwrap() = false;
+                    }
+
+                    println!("Game Over! Too many customers in line.");
+                    break;
+                }
             }
         }
     });
     handles.push(customer_spawner_handle);
 
     join_all(handles).await;
-        // .into_iter()
-        // .map(|res| res.unwrap())
-        // .collect();
+
+    println!("Press `Esc` to exit.\nPress `Enter` to continue.");
 
     // Restore terminal
     execute!(main_stdout, LeaveAlternateScreen, cursor::Show)?;

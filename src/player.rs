@@ -15,7 +15,7 @@ impl Player {
         self.0 & Self::LEVEL_MASK
     }
     pub fn customers_served(&self) -> u8 {
-        (self.0 & Self::CUSTOMERS_SERVED_MASK) >> 6
+        (self.0 & Self::CUSTOMERS_SERVED_MASK) >> 2
     }
 
     // // Setters
