@@ -1,0 +1,8 @@
+{
+    "customer_arrival_rate" : 10,
+    "drinks" : [
+        "Latte",
+        "Espresso",
+        "Cappuccino"
+    ]
+}
