@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::Config; // Used for rng chances
 
 #[derive(Debug, Clone)]
 pub struct Customer(u8);
@@ -14,7 +14,7 @@ impl Customer {
 
     // Getters
     pub fn desired_drink(&self) -> u8 {
-        (self.0 & Self::DESIRED_DRINK_ID_MASK)
+        self.0 & Self::DESIRED_DRINK_ID_MASK
     }
 
     // Setters

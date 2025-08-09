@@ -1,5 +1,9 @@
 mod customer;
+use customer::Customer;
 mod player;
+use player::Player;
+mod hoverable;
+use hoverable::Hoverable;
 
 use tokio::time::{sleep, Duration};
 use std::collections::HashMap;
@@ -31,15 +35,21 @@ struct Config {
     right_side_menu_padding: usize,
 
     #[serde(default = "default_drinks")]
-    drinks: HashMap<String, Vec<String>>,
+    drinks: HashMap<String, Vec<Hoverable>>,
 }
 
 fn default_customer_arrival_wait() -> usize { 10 }
 fn default_max_line_size() -> usize { 10 }
 fn default_right_side_menu_padding() -> usize { 1 }
-fn default_drinks() -> HashMap<String, Vec<String>> {
+fn default_drinks() -> HashMap<String, Vec<Hoverable>> {
     let mut map = HashMap::new();
-    map.insert("0".to_string(), vec!["Coffee".to_string()]);
+    map.insert(
+        "0".to_string(),
+        vec![Hoverable {
+            text: "Coffee".to_string(),
+            ..Default::default()
+        }]
+    );
     map
 }
 
@@ -69,9 +79,22 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     };
     let running = Arc::new(Mutex::new(true));
     let stdout = Arc::new(Mutex::new(stdout()));
-    let customers = Arc::new(Mutex::new(Vec::<customer::Customer>::new()));
-    let mut player = Arc::new(player::Player::new());
-    let mut handles = Vec::new();
+    let customers = Arc::new(Mutex::new(Vec::<Customer>::new()));
+    let mut player = Arc::new(Player::new());
+    let mut selected_menu = Arc::new(Vec::<Hoverable>::new());
+    let mut async_handles = Vec::new();
+
+    async fn cancellable_sleep(running: Arc<Mutex<bool>>, duration: Duration) {
+        let check_interval = Duration::from_millis(100);
+        let mut slept = Duration::ZERO;
+        while slept < duration {
+            if !*running.lock().unwrap() {
+                break;
+            }
+            sleep(check_interval).await;
+            slept += check_interval;
+        }
+    }
 
     // Rendering
     let running_render = Arc::clone(&running);
@@ -166,18 +189,18 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(100)).await;
         }
     });
-    handles.push(render_handle);
+    async_handles.push(render_handle);
 
     // Controlling
     let running_input = Arc::clone(&running);
 
-    let input_handle = task::spawn(async move {
+    let input_thread = std::thread::spawn(move || {
         loop {
             if !*running_input.lock().unwrap() {
                 break;
             }
 
-            if event::poll(Duration::from_millis(100)).unwrap() {
+            if event::poll(Duration::from_millis(10)).unwrap() {
                 if let Event::Key(key_event) = event::read().unwrap() {
                     match key_event.code {
                         KeyCode::Esc => {
@@ -190,7 +213,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
             }
         }
     });
-    handles.push(input_handle);
+    // async_handles.push(input_handle);
 
     let doing_customer_spawner = Arc::new(Mutex::new(true));
     let customer_spwaner_doing_customer_spawner = Arc::clone(&doing_customer_spawner);
@@ -205,16 +228,18 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                 break;
             }
             if !*customer_spwaner_doing_customer_spawner.lock().unwrap() {
-                sleep(Duration::from_secs(1)).await;
+                // sleep(Duration::from_secs(1)).await;
+                cancellable_sleep(running_customer_spawner.clone(), Duration::from_secs(1)).await;
                 continue;
             }
 
             let sleep_duration = cfg_customer_spawner.customer_arrival_wait;
-            sleep(Duration::from_secs(sleep_duration.try_into().unwrap())).await;
+            // sleep(Duration::from_secs(sleep_duration.try_into().unwrap())).await;
+            cancellable_sleep(running_customer_spawner.clone(), Duration::from_secs(sleep_duration.try_into().unwrap())).await;
             {
                 let mut customers_customer_spawner_locked = customers_customer_spawner.lock().unwrap();
                 if cfg_customer_spawner.max_line_size > customers_customer_spawner_locked.len() {
-                    (customers_customer_spawner_locked).push(customer::Customer::new())
+                    (customers_customer_spawner_locked).push(Customer::new())
                 } else {
                     {
                         *running_customer_spawner.lock().unwrap() = false;
@@ -226,9 +251,10 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
             }
         }
     });
-    handles.push(customer_spawner_handle);
+    async_handles.push(customer_spawner_handle);
 
-    join_all(handles).await;
+    join_all(async_handles).await;
+    input_thread.join().expect("Failed to join input thread");
 
     println!("Press `Esc` to exit.\nPress `Enter` to continue.");
 
