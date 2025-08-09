@@ -7,7 +7,8 @@ use hoverable::Hoverable;
 
 use tokio::time::{sleep, Duration};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use tokio::sync::Mutex;
 // use std::thread::current;
 use tokio::task;
 use serde::Deserialize;
@@ -80,15 +81,17 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     let running = Arc::new(Mutex::new(true));
     let stdout = Arc::new(Mutex::new(stdout()));
     let customers = Arc::new(Mutex::new(Vec::<Customer>::new()));
-    let mut player = Arc::new(Player::new());
-    let mut selected_menu = Arc::new(Vec::<Hoverable>::new());
+    let mut player = Arc::new(Mutex::new(Player::new()));
+    let mut selected_drink = Arc::new(Mutex::new(Hoverable::default()));
+    let mut selected_menu = Arc::new(Mutex::new(Vec::<Hoverable>::new()));
+    let mut buttons = Arc::new(Mutex::<Vec<Vec<Hoverable>>>::new(vec![vec![]]));
     let mut async_handles = Vec::new();
 
     async fn cancellable_sleep(running: Arc<Mutex<bool>>, duration: Duration) {
         let check_interval = Duration::from_millis(100);
         let mut slept = Duration::ZERO;
         while slept < duration {
-            if !*running.lock().unwrap() {
+            if !*running.lock().await {
                 break;
             }
             sleep(check_interval).await;
@@ -120,19 +123,19 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
         let render_widths = vec![cfg_render.right_side_menu_padding + max_drinks_width];
         let mut last_render: Vec<String> = vec!["".to_string(); 2]; // Number of menus
         loop {
-            if !*running_render.lock().unwrap() {
+            if !*running_render.lock().await {
                 break;
             }
             
             {
                 let mut current_render: Vec<String> = Vec::new();
-                // let level_key = player_render.level().to_string();
-                
+                let level_key = player_render.lock().await.level().to_string();
+
                 let drinks_menu: String = format!(
                     "Drinks:\n{}",
                     cfg_render
                         .drinks
-                        .get(&player_render.level().to_string())
+                        .get(&level_key)
                         .map(|drinks| {
                             drinks
                                 .iter()
@@ -145,7 +148,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                 current_render.push(drinks_menu);
 
                 let customers_menu: String = {
-                    let len = customers_render.lock().unwrap().len();
+                    let len = customers_render.lock().await.len();
 
                     (0..cfg_render.max_line_size)
                         .map(|i| {
@@ -160,7 +163,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                 };
                 current_render.push(customers_menu);
 
-                let mut out = stdout_render.lock().unwrap();
+                let mut out = stdout_render.lock().await;
                 if current_render != last_render {
                     let mut left_gap: usize = 1;
                     for i in 0..current_render.len() {
@@ -191,12 +194,47 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     });
     async_handles.push(render_handle);
 
+    // Buttons
+    let running_buttons = Arc::clone(&running);
+    let player_buttons = Arc::clone(&player);
+    let buttons_buttons = Arc::clone(&buttons);
+    let cfg_buttons = cfg.clone();
+
+    let button_handle = task::spawn(async move {
+        loop {
+            if !*running_buttons.lock().await {
+                break;
+            }
+
+            let level_key = player_buttons.lock().await.level().to_string();
+
+            let drinks: Vec<Hoverable> = cfg_buttons
+                .drinks
+                .get(&level_key)
+                .cloned()
+                .unwrap_or_default();
+
+            let new_buttons: Vec<Vec<Hoverable>> = vec![
+                drinks
+            ];
+
+            let mut buttons_guard = buttons_buttons.lock().await;
+
+            if new_buttons != *buttons_guard {
+                *buttons_guard = new_buttons;
+            }
+            drop(buttons_guard);
+            cancellable_sleep(running_buttons.clone(), Duration::from_secs(1)).await;
+        }
+    });
+    async_handles.push(button_handle);
+
     // Controlling
     let running_input = Arc::clone(&running);
 
-    let input_thread = std::thread::spawn(move || {
+    let input_thread = task::spawn(async move {
         loop {
-            if !*running_input.lock().unwrap() {
+            if !*running_input.lock().await {
                 break;
             }
 
@@ -204,7 +242,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                 if let Event::Key(key_event) = event::read().unwrap() {
                     match key_event.code {
                         KeyCode::Esc => {
-                            *running_input.lock().unwrap() = false;
+                            *running_input.lock().await = false;
                             break;
                         }
                         _ => {}
@@ -213,8 +251,9 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
             }
         }
     });
-    // async_handles.push(input_handle);
+    async_handles.push(input_thread);
 
+    // Customer Spawning
     let doing_customer_spawner = Arc::new(Mutex::new(true));
     let customer_spwaner_doing_customer_spawner = Arc::clone(&doing_customer_spawner);
 
@@ -224,25 +263,23 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
 
     let customer_spawner_handle = task::spawn(async move {
         loop {
-            if !*running_customer_spawner.lock().unwrap() {
+            if !*running_customer_spawner.lock().await {
                 break;
             }
-            if !*customer_spwaner_doing_customer_spawner.lock().unwrap() {
-                // sleep(Duration::from_secs(1)).await;
+            if !*customer_spwaner_doing_customer_spawner.lock().await {
                 cancellable_sleep(running_customer_spawner.clone(), Duration::from_secs(1)).await;
                 continue;
             }
 
             let sleep_duration = cfg_customer_spawner.customer_arrival_wait;
-            // sleep(Duration::from_secs(sleep_duration.try_into().unwrap())).await;
             cancellable_sleep(running_customer_spawner.clone(), Duration::from_secs(sleep_duration.try_into().unwrap())).await;
             {
-                let mut customers_customer_spawner_locked = customers_customer_spawner.lock().unwrap();
+                let mut customers_customer_spawner_locked = customers_customer_spawner.lock().await;
                 if cfg_customer_spawner.max_line_size > customers_customer_spawner_locked.len() {
                     (customers_customer_spawner_locked).push(Customer::new())
                 } else {
                     {
-                        *running_customer_spawner.lock().unwrap() = false;
+                        *running_customer_spawner.lock().await = false;
                     }
 
                     println!("Game Over! Too many customers in line.");
@@ -254,7 +291,7 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     async_handles.push(customer_spawner_handle);
 
     join_all(async_handles).await;
-    input_thread.join().expect("Failed to join input thread");
+    // input_thread.join().expect("Failed to join input thread");
 
     println!("Press `Esc` to exit.\nPress `Enter` to continue.");
 

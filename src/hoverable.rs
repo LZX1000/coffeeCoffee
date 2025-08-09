@@ -1,14 +1,16 @@
 use serde::{self, Deserialize};
-use std::fmt;
+use serde_json::Value;
+use std::{collections::HashMap, fmt};
 
 const REVERSE: &str = "\x1B[7m";
 const RESET: &str = "\x1B[0m";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Hoverable {
     pub text: String,
     pub font: String,
     pub hovered: bool,
+    pub data: Option<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +30,9 @@ struct HoverableFull {
 
     #[serde(default = "default_hovered")]
     hovered: bool,
+
+    #[serde(default)]
+    data: Option<HashMap<String, Value>>,
 }
 
 impl From<HoverableDef> for Hoverable {
@@ -40,7 +45,8 @@ impl From<HoverableDef> for Hoverable {
             HoverableDef::Full(full) => Hoverable {
                 text: full.text,
                 font: full.font,
-                hovered: full.hovered
+                hovered: full.hovered,
+                data: full.data,
             }
         }
     }
@@ -49,16 +55,6 @@ impl From<HoverableDef> for Hoverable {
 fn default_text() -> String { "".to_string() }
 fn default_font() -> String { RESET.to_string() }
 fn default_hovered() -> bool { false } 
-
-// impl From<Hoverable> for String {
-//     fn from(obj: Hoverable) -> Self {
-//         if obj.hovered {
-//             format!("{}{}{}{}", obj.font, REVERSE, obj.text, RESET)
-//         } else {
-//             format!("{}{}{}", obj.font, obj.text, RESET)
-//         }
-//     }
-// }
 
 impl fmt::Display for Hoverable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -76,6 +72,7 @@ impl Default for Hoverable {
             text: "".to_string(),
             font: RESET.to_string(),
             hovered: false,
+            data: None,
         }
     }
 }
@@ -83,11 +80,9 @@ impl Default for Hoverable {
 impl <'de> Deserialize<'de> for Hoverable {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
-            D: serde::Deserializer<'de> {
-        let text = String::deserialize(deserializer)?;
-        Ok(Hoverable {
-            text,
-            ..Default::default()
-        })
+            D: serde::Deserializer<'de>,
+    {
+        let helper = HoverableDef::deserialize(deserializer)?;
+        Ok(helper.into())
     }
 }

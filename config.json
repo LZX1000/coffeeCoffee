@@ -1,24 +1,100 @@
 {
-    "max_line_size" : 10,
-    "customer_arrival_wait" : 10,
-    "right_side_menu_padding" : 1,
-    "drinks" : {
-        "0" : [
-            "Iced",
-            "Black"
-        ],
-        "1" : [
-            "Chai",
-            "Matcha",
-            "Americano"
-        ],
-        "2" : [
-            "Latte",
-            "Mocha"
-        ],
-        "3" : [
-            "Espresso",
-            "Cappuccino"
-        ]
-    }
+  "max_line_size": 10,
+  "customer_arrival_wait": 10,
+  "right_side_menu_padding": 1,
+  "drinks": {
+    "0": [
+      {
+        "text": "Iced",
+        "data": {
+          "recipe": [
+            "ice",
+            "water",
+            "flavor"
+          ]
+        }
+      },
+      {
+        "text": "Black",
+        "data": {
+          "recipe": [
+            "water",
+            "coffee_grounds"
+          ]
+        }
+      }
+    ],
+    "1": [
+      {
+        "text": "Chai",
+        "data": {
+          "recipe": [
+            "boiled_water",
+            "tea_bag",
+            "sugar"
+          ]
+        }
+      },
+      {
+        "text": "Matcha",
+        "data": {
+          "recipe": [
+            "matcha_powder",
+            "boiled_water",
+            "milk"
+          ]
+        }
+      },
+      {
+        "text": "Americano",
+        "data": {
+          "recipe": [
+            "espresso_shot",
+            "boiled_water"
+          ]
+        }
+      }
+    ],
+    "2": [
+      {
+        "text": "Latte",
+        "data": {
+          "recipe": [
+            "espresso_shot",
+            "steamed_milk"
+          ]
+        }
+      },
+      {
+        "text": "Mocha",
+        "data": {
+          "recipe": [
+            "espresso_shot",
+            "chocolate_syrup",
+            "steamed_milk"
+          ]
+        }
+      }
+    ],
+    "3": [
+      {
+        "text": "Espresso",
+        "data": {
+          "recipe": [
+            "espresso_shot"
+          ]
+        }
+      },
+      {
+        "text": "Cappuccino",
+        "data": {
+          "recipe": [
+            "espresso_shot",
+            "steamed_milk",
+            "milk_foam"
+          ]
+        }
+      }
+    ]
+  }
 }
