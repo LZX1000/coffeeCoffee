@@ -4,6 +4,7 @@ mod player;
 use tokio::time::{sleep, Duration};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+// use std::thread::current;
 use tokio::task;
 use serde::Deserialize;
 use std::fs;
@@ -14,7 +15,7 @@ use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     // style::{Print},
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
 
@@ -26,12 +27,16 @@ struct Config {
     #[serde(default = "default_max_line_size")]
     max_line_size: usize,
 
+    #[serde(default = "default_right_side_menu_padding")]
+    right_side_menu_padding: usize,
+
     #[serde(default = "default_drinks")]
     drinks: HashMap<String, Vec<String>>,
 }
 
 fn default_customer_arrival_wait() -> usize { 10 }
 fn default_max_line_size() -> usize { 10 }
+fn default_right_side_menu_padding() -> usize { 1 }
 fn default_drinks() -> HashMap<String, Vec<String>> {
     let mut map = HashMap::new();
     map.insert("0".to_string(), vec!["Coffee".to_string()]);
@@ -74,30 +79,49 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
     let cfg_render = cfg.clone();
     let player_render = Arc::clone(&player);
     let customers_render = Arc::clone(&customers);
-    
+
     let render_handle = task::spawn(async move {
-        let mut last_render = String::new();
+        let max_drinks_width = {   
+            cfg_render
+                .drinks
+                .values()
+                .flat_map(|drinks| {
+                    let mut lines = vec!["Drinks:".to_string()];
+                    lines.extend(drinks.iter().map(|d| format!("  {}", d)));
+                    lines
+                })
+                .map(|line| line.len())
+                .max()
+                .unwrap_or(0)
+        };
+        let render_widths = vec![cfg_render.right_side_menu_padding + max_drinks_width];
+        let mut last_render: Vec<String> = vec!["".to_string(); 2]; // Number of menus
         loop {
             if !*running_render.lock().unwrap() {
                 break;
             }
             
             {
-                let level_key = player_render.level().to_string();
-
-                let drinks_formatted = cfg_render
-                    .drinks
-                    .get(&level_key)
-                    .map(|drinks| {
-                        drinks
-                            .iter()
-                            .map(|drink| format!("  {}", drink))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    })
-                    .unwrap_or_else(|| "  No drinks available.".to_string());
+                let mut current_render: Vec<String> = Vec::new();
+                // let level_key = player_render.level().to_string();
                 
-                let customers_display: String = {
+                let drinks_menu: String = format!(
+                    "Drinks:\n{}",
+                    cfg_render
+                        .drinks
+                        .get(&player_render.level().to_string())
+                        .map(|drinks| {
+                            drinks
+                                .iter()
+                                .map(|drink| format!("  {}", drink))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        })
+                        .unwrap_or_else(|| "  No drinks available.".to_string())
+                );
+                current_render.push(drinks_menu);
+
+                let customers_menu: String = {
                     let len = customers_render.lock().unwrap().len();
 
                     (0..cfg_render.max_line_size)
@@ -111,18 +135,29 @@ async fn main() -> Result <(), Box<dyn std::error::Error>> {
                         })
                         .collect::<String>()
                 };
+                current_render.push(customers_menu);
 
-                let current_render = format!(
-                    "Arrival Rate: {}\nDrinks:\n{}\n\n{}",
-                    cfg_render.customer_arrival_wait,
-                    drinks_formatted,
-                    customers_display
-                );
-
+                let mut out = stdout_render.lock().unwrap();
                 if current_render != last_render {
-                    let mut out = stdout_render.lock().unwrap();
-                    execute!(*out, cursor::MoveTo(0, 0), Clear(ClearType::FromCursorDown)).ok();
-                    writeln!(*out, "{}", current_render).ok();
+                    let mut left_gap: usize = 1;
+                    for i in 0..current_render.len() {
+                        let width = match render_widths.get(i) {
+                            Some(value) => value,
+                            None => &current_render[i]
+                                .lines()
+                                .map(|line| line.len())
+                                .max()
+                                .unwrap_or(0)
+                        };
+                        if current_render[i] != last_render[i] {
+                            write!(
+                                *out,
+                                "\x1B[1;{}H{:<width$}",
+                                left_gap, current_render[i]
+                            ).ok();
+                        }
+                        left_gap += width;
+                    };
                     out.flush().ok();
                     last_render = current_render;
                 }

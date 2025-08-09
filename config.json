@@ -1,6 +1,7 @@
 {
     "max_line_size" : 10,
     "customer_arrival_wait" : 10,
+    "right_side_menu_padding" : 1,
     "drinks" : {
         "0" : [
             "Iced",
