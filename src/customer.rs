@@ -1,4 +1,4 @@
-use crate::Config; // Used for rng chances
+// use crate::config; // Used for rng chances
 
 #[derive(Debug, Clone)]
 pub struct Customer(u8);
