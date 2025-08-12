@@ -121,9 +121,8 @@ pub fn main(cfg_path: &str) -> Result<()> {
                     out.flush().ok();
                     last_render = current_render;
                 }
+                cancellable_sleep(&condvar_pair, Duration::from_millis(100));
             }
-
-            cancellable_sleep(&condvar_pair, Duration::from_millis(100));
         });
     }
 
@@ -132,6 +131,10 @@ pub fn main(cfg_path: &str) -> Result<()> {
     let running = Arc::clone(&running);
     let player = Arc::clone(&player);
     let buttons = Arc::clone(&buttons);
+    let condvar_pair = (
+            Arc::clone(&condvar_pair.0),
+            Arc::clone(&condvar_pair.1),
+        );
     let cfg = cfg.clone();
 
     thread::spawn(move || {
@@ -185,7 +188,7 @@ pub fn main(cfg_path: &str) -> Result<()> {
                         }
                     }
                     // Code Events
-                    match event_rx.recv() {
+                    match event_rx.try_recv() {
                         Ok(CodeEvent::Quit) => {
                             running.store(false, SeqCst);
                         }
@@ -245,16 +248,20 @@ pub fn main(cfg_path: &str) -> Result<()> {
         let running = Arc::clone(&running);
         let doing_customer_spawner = Arc::clone(&doing_customer_spawner);
         let event_tx = event_tx.clone();
+        let condvar_pair = (
+            Arc::clone(&condvar_pair.0),
+            Arc::clone(&condvar_pair.1),
+        );
         let cfg = cfg.clone();
 
         thread::spawn(move || {
             while running.load(SeqCst) {
                 if !doing_customer_spawner.load(SeqCst) {
-                    thread::sleep(Duration::from_secs(1));
+                    cancellable_sleep(&condvar_pair, Duration::from_secs(1));
                     continue;
                 }
 
-                thread::sleep(Duration::from_secs(cfg.customer_arrival_wait as u64));
+                cancellable_sleep(&condvar_pair, Duration::from_secs(cfg.customer_arrival_wait as u64));
                 if !running.load(SeqCst) {
                     break;
                 }

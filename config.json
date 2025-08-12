@@ -1,6 +1,6 @@
 {
   "max_line_size": 10,
-  "customer_arrival_wait": 10,
+  "customer_arrival_wait": 3,
   "right_side_menu_padding": 1,
   "drinks": {
     "0": [
